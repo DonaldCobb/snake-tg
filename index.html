@@ -144,13 +144,18 @@ let audioCtx = null;
 let muted = false;
 
 function getAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  return audioCtx;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+  } catch (e) {
+    return null;
+  }
 }
 
 function playEat() {
   if (muted) return;
   const ac = getAudio();
+  if (!ac) return;
   const osc = ac.createOscillator();
   const gain = ac.createGain();
   osc.connect(gain); gain.connect(ac.destination);
@@ -166,6 +171,7 @@ function playEat() {
 function playDie() {
   if (muted) return;
   const ac = getAudio();
+  if (!ac) return;
   [[392, 0], [349, 0.22], [311, 0.44]].forEach(([freq, delay]) => {
     const osc = ac.createOscillator();
     const gain = ac.createGain();
@@ -201,6 +207,7 @@ function playDie() {
 function playStart() {
   if (muted) return;
   const ac = getAudio();
+  if (!ac) return;
   [262, 330, 392, 523].forEach((freq, i) => {
     const osc = ac.createOscillator();
     const gain = ac.createGain();
@@ -391,6 +398,7 @@ canvas.addEventListener('touchend', e => {
 }, { passive: true });
 
 btn.addEventListener('click', init);
+btn.addEventListener('touchend', e => { e.preventDefault(); init(); });
 
 // Начальный экран
 ctx.fillStyle = '#16213e';
