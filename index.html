@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Змейка</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: 'Segoe UI', sans-serif;
+    color: #eee;
+    overflow: hidden;
+  }
+
+  h1 {
+    font-size: 1.6rem;
+    margin-bottom: 8px;
+    letter-spacing: 4px;
+    color: #4ecca3;
+  }
+
+  #score-board {
+    display: flex;
+    gap: 40px;
+    margin-bottom: 12px;
+    font-size: 1rem;
+    letter-spacing: 1px;
+  }
+
+  #score-board span { color: #4ecca3; font-weight: bold; font-size: 1.2rem; }
+
+  canvas {
+    border: 2px solid #4ecca3;
+    border-radius: 4px;
+    box-shadow: 0 0 30px rgba(78, 204, 163, 0.3);
+    touch-action: none;
+  }
+
+  #message {
+    margin-top: 14px;
+    font-size: 0.85rem;
+    color: #aaa;
+    letter-spacing: 1px;
+    height: 20px;
+    text-align: center;
+  }
+
+  #overlay {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  #overlay h2 {
+    font-size: 2rem;
+    color: #4ecca3;
+    letter-spacing: 3px;
+  }
+
+  #overlay p { color: #ccc; font-size: 1rem; }
+
+  button {
+    margin-top: 8px;
+    padding: 10px 32px;
+    background: #4ecca3;
+    color: #1a1a2e;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: background 0.2s;
+  }
+
+  button:hover { background: #38b28d; }
+
+  @keyframes shake {
+    0%   { transform: translate(0, 0) rotate(0deg); }
+    10%  { transform: translate(-10px, -4px) rotate(-2deg); }
+    20%  { transform: translate(10px, 4px) rotate(2deg); }
+    30%  { transform: translate(-10px, 4px) rotate(-1deg); }
+    40%  { transform: translate(10px, -4px) rotate(1deg); }
+    50%  { transform: translate(-8px, 0) rotate(-2deg); }
+    60%  { transform: translate(8px, 2px) rotate(1deg); }
+    70%  { transform: translate(-6px, -2px) rotate(-1deg); }
+    80%  { transform: translate(6px, 0) rotate(0deg); }
+    90%  { transform: translate(-3px, 1px); }
+    100% { transform: translate(0, 0); }
+  }
+
+  .shake { animation: shake 0.55s cubic-bezier(.36,.07,.19,.97) both; }
+
+  @keyframes flash-red {
+    0%, 100% { box-shadow: 0 0 30px rgba(78, 204, 163, 0.3); border-color: #4ecca3; }
+    20%       { box-shadow: 0 0 50px rgba(255, 60, 60, 0.8); border-color: #ff3c3c; }
+    50%       { box-shadow: 0 0 40px rgba(255, 60, 60, 0.5); border-color: #ff3c3c; }
+  }
+
+  .flash-red { animation: flash-red 0.55s ease both; }
+</style>
+</head>
+<body>
+
+<h1>ЗМЕЙКА</h1>
+
+<div id="score-board">
+  <div>Очки: <span id="score">0</span></div>
+  <div>Рекорд: <span id="best">0</span></div>
+</div>
+
+<div id="canvas-wrap" style="position:relative">
+  <canvas id="c"></canvas>
+  <div id="overlay">
+    <h2 id="overlay-title">ЗМЕЙКА</h2>
+    <p id="overlay-text">Свайп для управления</p>
+    <button id="btn">Играть</button>
+  </div>
+</div>
+
+<div id="message">Свайп для управления • P — пауза</div>
+
+<script>
+// Telegram Mini App init
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) {
+  tg.ready();
+  tg.expand();
+}
+
+// --- Audio ---
+let audioCtx = null;
+let muted = false;
+
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playEat() {
+  if (muted) return;
+  const ac = getAudio();
+  const osc = ac.createOscillator();
+  const gain = ac.createGain();
+  osc.connect(gain); gain.connect(ac.destination);
+  osc.type = 'sine';
+  const t = ac.currentTime;
+  osc.frequency.setValueAtTime(440, t);
+  osc.frequency.exponentialRampToValueAtTime(880, t + 0.08);
+  gain.gain.setValueAtTime(0.25, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  osc.start(t); osc.stop(t + 0.12);
+}
+
+function playDie() {
+  if (muted) return;
+  const ac = getAudio();
+  [[392, 0], [349, 0.22], [311, 0.44]].forEach(([freq, delay]) => {
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = 'sawtooth';
+    const t = ac.currentTime + delay;
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.85, t + 0.18);
+    gain.gain.setValueAtTime(0.2, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    osc.start(t); osc.stop(t + 0.2);
+  });
+  const t0 = ac.currentTime + 0.66;
+  const osc = ac.createOscillator();
+  const lfo = ac.createOscillator();
+  const lfoGain = ac.createGain();
+  const gain = ac.createGain();
+  lfo.frequency.value = 5.5;
+  lfoGain.gain.value = 12;
+  lfo.connect(lfoGain);
+  lfoGain.connect(osc.frequency);
+  osc.connect(gain); gain.connect(ac.destination);
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(277, t0);
+  osc.frequency.exponentialRampToValueAtTime(120, t0 + 1.0);
+  gain.gain.setValueAtTime(0.22, t0);
+  gain.gain.setValueAtTime(0.22, t0 + 0.6);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + 1.1);
+  lfo.start(t0); lfo.stop(t0 + 1.1);
+  osc.start(t0); osc.stop(t0 + 1.1);
+}
+
+function playStart() {
+  if (muted) return;
+  const ac = getAudio();
+  [262, 330, 392, 523].forEach((freq, i) => {
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = 'sine';
+    const t = ac.currentTime + i * 0.08;
+    osc.frequency.setValueAtTime(freq, t);
+    gain.gain.setValueAtTime(0.15, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    osc.start(t); osc.stop(t + 0.1);
+  });
+}
+// --- /Audio ---
+
+function shakeCanvas() {
+  const wrap = document.getElementById('canvas-wrap');
+  wrap.classList.remove('shake', 'flash-red');
+  void wrap.offsetWidth;
+  wrap.classList.add('shake', 'flash-red');
+  wrap.addEventListener('animationend', () => wrap.classList.remove('shake', 'flash-red'), { once: true });
+}
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlay-title');
+const overlayText = document.getElementById('overlay-text');
+const btn = document.getElementById('btn');
+const scoreEl = document.getElementById('score');
+const bestEl = document.getElementById('best');
+
+// Адаптивный размер — подстраивается под экран телефона
+const CELL = 20;
+const size = Math.min(window.innerWidth - 16, window.innerHeight - 140, 400);
+const snappedSize = Math.floor(size / CELL) * CELL;
+canvas.width = snappedSize;
+canvas.height = snappedSize;
+const COLS = canvas.width / CELL;
+const ROWS = canvas.height / CELL;
+
+let snake, dir, nextDir, food, score, best = 0, running = false, paused = false, loop;
+
+function init() {
+  playStart();
+  snake = [
+    { x: Math.floor(COLS / 2), y: Math.floor(ROWS / 2) },
+    { x: Math.floor(COLS / 2) - 1, y: Math.floor(ROWS / 2) },
+    { x: Math.floor(COLS / 2) - 2, y: Math.floor(ROWS / 2) }
+  ];
+  dir = { x: 1, y: 0 };
+  nextDir = { x: 1, y: 0 };
+  score = 0;
+  scoreEl.textContent = 0;
+  spawnFood();
+  overlay.style.display = 'none';
+  running = true;
+  paused = false;
+  clearInterval(loop);
+  loop = setInterval(tick, 120);
+}
+
+function spawnFood() {
+  let pos;
+  do {
+    pos = { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * ROWS) };
+  } while (snake.some(s => s.x === pos.x && s.y === pos.y));
+  food = pos;
+}
+
+function tick() {
+  if (!running || paused) return;
+  dir = nextDir;
+  const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+  if (head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= ROWS) return gameOver();
+  if (snake.some(s => s.x === head.x && s.y === head.y)) return gameOver();
+  snake.unshift(head);
+  if (head.x === food.x && head.y === food.y) {
+    score++;
+    scoreEl.textContent = score;
+    if (score > best) { best = score; bestEl.textContent = best; }
+    playEat();
+    spawnFood();
+  } else {
+    snake.pop();
+  }
+  draw();
+}
+
+function draw() {
+  ctx.fillStyle = '#16213e';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < COLS; x++) {
+    ctx.beginPath(); ctx.moveTo(x * CELL, 0); ctx.lineTo(x * CELL, canvas.height); ctx.stroke();
+  }
+  for (let y = 0; y < ROWS; y++) {
+    ctx.beginPath(); ctx.moveTo(0, y * CELL); ctx.lineTo(canvas.width, y * CELL); ctx.stroke();
+  }
+
+  const fx = food.x * CELL + CELL / 2;
+  const fy = food.y * CELL + CELL / 2;
+  const r = CELL / 2 - 2;
+  const grad = ctx.createRadialGradient(fx - 2, fy - 2, 1, fx, fy, r);
+  grad.addColorStop(0, '#ff6b9d');
+  grad.addColorStop(1, '#c0392b');
+  ctx.beginPath();
+  ctx.arc(fx, fy, r, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  snake.forEach((seg, i) => {
+    const ratio = i / snake.length;
+    const g = ctx.createLinearGradient(seg.x * CELL, seg.y * CELL, seg.x * CELL + CELL, seg.y * CELL + CELL);
+    g.addColorStop(0, i === 0 ? '#4ecca3' : `hsl(${160 - ratio * 40}, 70%, ${55 - ratio * 15}%)`);
+    g.addColorStop(1, i === 0 ? '#38b28d' : `hsl(${155 - ratio * 40}, 65%, ${45 - ratio * 15}%)`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.roundRect(seg.x * CELL + 2, seg.y * CELL + 2, CELL - 4, CELL - 4, i === 0 ? 6 : 3);
+    ctx.fill();
+    if (i === 0) {
+      ctx.fillStyle = '#1a1a2e';
+      const ex = seg.x * CELL + CELL / 2;
+      const ey = seg.y * CELL + CELL / 2;
+      const ox = dir.x * 4, oy = dir.y * 4;
+      const px = dir.y * 3, py = dir.x * 3;
+      ctx.beginPath(); ctx.arc(ex + ox + px, ey + oy - py, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex + ox - px, ey + oy + py, 2, 0, Math.PI * 2); ctx.fill();
+    }
+  });
+}
+
+function gameOver() {
+  running = false;
+  clearInterval(loop);
+  shakeCanvas();
+  playDie();
+  overlayTitle.textContent = 'КОНЕЦ';
+  overlayText.textContent = `Очки: ${score}`;
+  btn.textContent = 'Играть снова';
+  overlay.style.display = 'flex';
+  // Отправить счёт в Telegram
+  if (tg && tg.initData) {
+    tg.sendData(JSON.stringify({ score }));
+  }
+}
+
+// Клавиатура
+document.addEventListener('keydown', e => {
+  switch (e.key) {
+    case 'ArrowUp':    case 'w': case 'W': if (dir.y !== 1)  nextDir = { x: 0, y: -1 }; break;
+    case 'ArrowDown':  case 's': case 'S': if (dir.y !== -1) nextDir = { x: 0, y:  1 }; break;
+    case 'ArrowLeft':  case 'a': case 'A': if (dir.x !== 1)  nextDir = { x: -1, y: 0 }; break;
+    case 'ArrowRight': case 'd': case 'D': if (dir.x !== -1) nextDir = { x:  1, y: 0 }; break;
+    case 'p': case 'P':
+      if (!running) return;
+      paused = !paused;
+      document.getElementById('message').textContent = paused
+        ? 'Пауза — нажми P чтобы продолжить'
+        : 'Свайп для управления • P — пауза';
+      if (!paused) draw();
+      break;
+    case 'm': case 'M':
+      muted = !muted;
+      break;
+  }
+  e.preventDefault();
+});
+
+// Touch-управление (свайпы)
+let touchStartX = 0, touchStartY = 0;
+canvas.addEventListener('touchstart', e => {
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}, { passive: true });
+canvas.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return; // тап без свайпа
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx > 0 && dir.x !== -1) nextDir = { x: 1, y: 0 };
+    if (dx < 0 && dir.x !== 1)  nextDir = { x: -1, y: 0 };
+  } else {
+    if (dy > 0 && dir.y !== -1) nextDir = { x: 0, y: 1 };
+    if (dy < 0 && dir.y !== 1)  nextDir = { x: 0, y: -1 };
+  }
+}, { passive: true });
+
+btn.addEventListener('click', init);
+
+// Начальный экран
+ctx.fillStyle = '#16213e';
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+</script>
+</body>
+</html>
