@@ -20,22 +20,23 @@
     overflow: hidden;
   }
 
-  h1 {
-    font-size: 1.6rem;
-    margin-bottom: 8px;
-    letter-spacing: 4px;
-    color: #4ecca3;
+  #top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 6px 12px;
+    gap: 12px;
   }
 
   #score-board {
     display: flex;
-    gap: 40px;
-    margin-bottom: 12px;
-    font-size: 1rem;
+    gap: 20px;
+    font-size: 0.95rem;
     letter-spacing: 1px;
   }
 
-  #score-board span { color: #4ecca3; font-weight: bold; font-size: 1.2rem; }
+  #score-board span { color: #4ecca3; font-weight: bold; }
 
   canvas {
     border: 2px solid #4ecca3;
@@ -44,22 +45,14 @@
     touch-action: none;
   }
 
-  #message {
-    margin-top: 14px;
-    font-size: 0.85rem;
-    color: #aaa;
-    letter-spacing: 1px;
-    height: 20px;
-    text-align: center;
-  }
-
   #overlay {
     position: absolute;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 12px;
+    gap: 10px;
+    pointer-events: none;
   }
 
   #overlay h2 {
@@ -71,8 +64,7 @@
   #overlay p { color: #ccc; font-size: 1rem; }
 
   button {
-    margin-top: 8px;
-    padding: 10px 32px;
+    padding: 8px 28px;
     background: #4ecca3;
     color: #1a1a2e;
     border: none;
@@ -82,9 +74,11 @@
     cursor: pointer;
     letter-spacing: 1px;
     transition: background 0.2s;
+    -webkit-tap-highlight-color: transparent;
   }
 
   button:hover { background: #38b28d; }
+  button:active { background: #2d9e7a; }
 
   @keyframes shake {
     0%   { transform: translate(0, 0) rotate(0deg); }
@@ -113,23 +107,21 @@
 </head>
 <body>
 
-<h1>ЗМЕЙКА</h1>
-
-<div id="score-board">
-  <div>Очки: <span id="score">0</span></div>
-  <div>Рекорд: <span id="best">0</span></div>
+<div id="top-bar">
+  <div id="score-board">
+    <div>Очки: <span id="score">0</span></div>
+    <div>Рекорд: <span id="best">0</span></div>
+  </div>
+  <button id="btn">Играть</button>
 </div>
 
 <div id="canvas-wrap" style="position:relative">
   <canvas id="c"></canvas>
-  <div id="overlay">
-    <h2 id="overlay-title">ЗМЕЙКА</h2>
-    <p id="overlay-text">Свайп для управления</p>
-    <button id="btn">Играть</button>
+  <div id="overlay" style="display:none">
+    <h2 id="overlay-title">КОНЕЦ</h2>
+    <p id="overlay-text"></p>
   </div>
 </div>
-
-<div id="message">Свайп для управления • P — пауза</div>
 
 <script>
 // Telegram Mini App init
@@ -239,9 +231,9 @@ const btn = document.getElementById('btn');
 const scoreEl = document.getElementById('score');
 const bestEl = document.getElementById('best');
 
-// Адаптивный размер — подстраивается под экран телефона
+// Адаптивный размер — оставляем место только для top-bar
 const CELL = 20;
-const size = Math.min(window.innerWidth - 16, window.innerHeight - 140, 400);
+const size = Math.min(window.innerWidth - 8, window.innerHeight - 60, 420);
 const snappedSize = Math.floor(size / CELL) * CELL;
 canvas.width = snappedSize;
 canvas.height = snappedSize;
@@ -263,6 +255,7 @@ function init() {
   scoreEl.textContent = 0;
   spawnFood();
   overlay.style.display = 'none';
+  btn.textContent = 'Пауза';
   running = true;
   paused = false;
   clearInterval(loop);
@@ -348,8 +341,8 @@ function gameOver() {
   playDie();
   overlayTitle.textContent = 'КОНЕЦ';
   overlayText.textContent = `Очки: ${score}`;
-  btn.textContent = 'Играть снова';
   overlay.style.display = 'flex';
+  btn.textContent = 'Играть снова';
   // Отправить счёт в Telegram
   if (tg && tg.initData) {
     tg.sendData(JSON.stringify({ score }));
@@ -397,8 +390,17 @@ canvas.addEventListener('touchend', e => {
   }
 }, { passive: true });
 
-btn.addEventListener('click', init);
-btn.addEventListener('touchend', e => { e.preventDefault(); init(); });
+function handleBtn() {
+  if (!running || btn.textContent === 'Играть' || btn.textContent === 'Играть снова') {
+    init();
+  } else {
+    paused = !paused;
+    btn.textContent = paused ? 'Продолжить' : 'Пауза';
+    if (!paused) draw();
+  }
+}
+btn.addEventListener('click', handleBtn);
+btn.addEventListener('touchend', e => { e.preventDefault(); handleBtn(); });
 
 // Начальный экран
 ctx.fillStyle = '#16213e';
